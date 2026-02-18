@@ -1,18 +1,25 @@
 import os
 import re
 from datetime import datetime
-from langchain_aws import ChatBedrock
 from langchain.tools import tool
-from langchain.agents import create_agent
+from langgraph.prebuilt import create_react_agent
+from langchain.chat_models import init_chat_model
 
-# Set Parameters
-model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+from openai import OpenAI
+from dotenv import load_dotenv
 
-# Initialize Bedrock LLM
-llm = ChatBedrock(
-    model_id=model_id,
-    region_name=os.getenv("AWS_REGION", "us-east-1")
-)
+_ = load_dotenv()
+
+# Initialize the OpenAI
+api_key=os.environ.get("OPENAI_API_KEY")
+
+# Initialize the LLM 
+
+# This single line can return a ChatOpenAI, ChatAnthropic, or ChatBedrock object
+llm = init_chat_model("gpt-4o", model_provider="openai", temperature=0)
+
+# To switch to Bedrock, you'd only change the parameters:
+# llm = init_chat_model("anthropic.claude-3-sonnet-20240229-v1:0", model_provider="amazon_bedrock")
 
 # Define Tools
 @tool
@@ -62,11 +69,15 @@ def get_time() -> str:
 
 # Create agent with tools
 tools = [calculate_expression, get_weather, get_date, get_time]
-agent = create_agent(
+#agent = create_openai_tools_agent(llm, tools, prompt)
+
+# Create the agent
+# LangGraph treats the 'llm' as a black box that supports tool-calling
+agent = create_react_agent(
     model=llm,
     tools=tools,
-    system_prompt="You are a helpful personal assistant. I can tell you the current date, time, and weather. I can also calculate mathematical expressions."
-)
+    prompt="You are a helpful personal assistant."
+    )
 
 print("Welcome! I'm your personal assistant. I can tell you the current date, time, and weather. I can also calculate mathematical expressions. Type 'quit' to stop.")
 while True:
@@ -75,7 +86,18 @@ while True:
         print("Agent: Goodbye!")
         break
     print("🤖 System call")
+    # Capture the result of the invocation
+    #agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+    #response = agent_executor.invoke({"input": user_input})
+    #print("Agent:", response["output"])
+
+    #response = agent.invoke({"input": user_input})
+
     response = agent.invoke(
-        {"messages": [{"role": "user", "content": user_input}]}
+        {"messages": [("user", user_input)]} 
     )
+
+
+    # Access the content of the LAST message in the response
+    # In LangGraph, the final AI response is always at the end of the messages list
     print("Agent:", response["messages"][-1].content)

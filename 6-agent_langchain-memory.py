@@ -1,19 +1,29 @@
 import os
 import re
 from datetime import datetime
-from langchain_aws import ChatBedrock
 from langchain.tools import tool
-from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import InMemorySaver
+from openai import OpenAI
+from dotenv import load_dotenv
+
+_ = load_dotenv()
 
 # Set Parameters
-model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+#model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+#model_id = "gpt-4o"
 
-# Initialize Bedrock LLM
-llm = ChatBedrock(
-    model_id=model_id,
-    region_name=os.getenv("AWS_REGION", "us-east-1")
-)
+# Initialize the OpenAI
+api_key=os.environ.get("OPENAI_API_KEY")
+
+# Initialize the LLM 
+# This single line can return a ChatOpenAI, ChatAnthropic, or ChatBedrock object
+llm = init_chat_model("gpt-4o", model_provider="openai", temperature=0)
+
+# To switch to Bedrock, you'd only change the parameters:
+# llm = init_chat_model("anthropic.claude-3-sonnet-20240229-v1:0", model_provider="amazon_bedrock")
+
 
 # Define Tools
 @tool
@@ -63,11 +73,26 @@ def get_time() -> str:
 
 # Create agent with tools
 tools = [calculate_expression, get_weather, get_date, get_time]
-agent = create_agent(
+
+# Create the agent
+# LangGraph treats the 'llm' as a black box that supports tool-calling
+agent = create_react_agent(
     model=llm,
     tools=tools,
-    system_prompt="You are a helpful personal assistant. I can tell you the current date, time, and weather. I can also calculate mathematical expressions.",
-    checkpointer=InMemorySaver()
+    prompt="You are a helpful personal assistant."
+    )
+
+
+# Initialize the memory checkpointer
+memory = InMemorySaver()
+
+# Create agent with tools
+tools = [calculate_expression, get_weather, get_date, get_time]
+agent = create_react_agent(
+    model=llm,
+    tools=tools,
+    prompt="You are a helpful personal assistant...", 
+    checkpointer=memory
 )
 
 print("Welcome! I'm your personal assistant. I can tell you the current date, time, and weather. I can also calculate mathematical expressions. Type 'quit' to stop.")
@@ -79,6 +104,6 @@ while True:
     print("🤖 System call")
     response = agent.invoke(
         {"messages": [{"role": "user", "content": user_input}]},
-        {"configurable": {"thread_id": "1"}}
+        {"configurable": {"thread_id": "1"}} # The config thread_id is what connects your current call to the saved memory
     )
     print("Agent:", response["messages"][-1].content)

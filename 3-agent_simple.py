@@ -1,4 +1,3 @@
-import boto3
 import json
 import os
 import re
@@ -6,13 +5,24 @@ from datetime import datetime
 
 
 # Set Paramters:
-model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+#model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+#model_id = "claude-sonnet-4-5-20250929"
+#model_id = "claude-3-7-sonnet-20250219"
+#model_id = "gpt-4o"
+model_id = "gpt-3.5-turbo"
 
-# Initialize AWS Bedrock client
-bedrock_runtime = boto3.client(
-    'bedrock-runtime',
-    region_name=os.getenv("AWS_REGION", "us-east-1")
-)
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+_ = load_dotenv()
+
+# Initialize the OpenAI client
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# client = OpenAI(
+#     base_url="https://api.anthropic.com",
+#     api_key=os.environ.get("ANTHROPIC_API_KEY")
+# )
 
 # Define Tools
 def calculate_expression(expression):
@@ -55,20 +65,36 @@ def get_time(location=None):
 def call_llm(user_input, system_message, model_id=model_id):
     """Single LLM call function"""
     try:
-        response = bedrock_runtime.converse(
-            modelId=model_id,
-            system=[{"text": system_message}],
-            messages=[
-                {
-                    "role": "user",
-                    "content": [{"text": user_input}]
-                }
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_input}
             ],
-            inferenceConfig={"maxTokens": 1024}
+        response = client.chat.completions.create(
+        model=model_id,
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_input}
+            ],
+            max_tokens=1024
         )
-        return response['output']['message']['content'][0]['text']
+        #print(json.dumps(response.model_dump(), indent=2, default=str))
+        #print(response.model_dump_json(indent=2))
+        # Combine both into a single "full dump" dictionary
+        full_dump = {
+            "request": {
+                "model": model_id,
+                "messages": messages  # This includes your user message
+            },
+            "response": response.model_dump()
+        }
+        
+        # Print the entire structure
+        print(json.dumps(full_dump, indent=2, default=str))
+        
+        # Return the the response
+        return response.choices[0].message.content
     except Exception as e:
-        print(f"Error calling Bedrock: {e}")
+        print(f"Error calling OpenAI: {e}")
         return None
 
 def call_tool(tool_name, tool_input):
@@ -89,7 +115,7 @@ def call_tool(tool_name, tool_input):
     else:
         return f"Unknown tool: {tool_name}"
 
-def query_claude(user_input):
+def query_client(user_input):
     # System message for tool selection and general conversation
     system_message = (
         "You're a helpful personal assistant. Based on the user's message, "
@@ -143,5 +169,5 @@ while True:
     if user_input.lower() == "quit":
         print("Agent: Goodbye!")
         break
-    print("Agent:", query_claude(user_input))
+    print("Agent:", query_client(user_input))
 

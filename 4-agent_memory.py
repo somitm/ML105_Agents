@@ -1,4 +1,3 @@
-import boto3
 import json
 import os
 import re
@@ -6,13 +5,17 @@ from datetime import datetime
 
 
 # Set Paramters:
-model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+#model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+model_id = "gpt-4o"
 
-# Initialize AWS Bedrock client
-bedrock_runtime = boto3.client(
-    'bedrock-runtime',
-    region_name=os.getenv("AWS_REGION", "us-east-1")
-)
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+_ = load_dotenv()
+
+# Initialize the OpenAI client
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # Define Tools
 def calculate_expression(expression):
@@ -56,27 +59,31 @@ def call_llm(user_input, system_message, conversation_history=[], model_id=model
     """Single LLM call function with conversation history"""
     try:
         # Build messages list with conversation history
-        messages = []
+        conversation_messages = []
         
         # Add previous conversation history
         for msg in conversation_history:
-            messages.append(msg)
+            conversation_messages.append(msg)
         
         # Add current user message
-        messages.append({
-            "role": "user",
-            "content": [{"text": user_input}]
-        })
-        
-        response = bedrock_runtime.converse(
-            modelId=model_id,
-            system=[{"text": system_message}],
-            messages=messages,
-            inferenceConfig={"maxTokens": 1024}
+        conversation_messages.append(
+            {"role": "user","content": user_input}
         )
-        return response['output']['message']['content'][0]['text']
+
+        response = client.chat.completions.create(
+        model=model_id,
+        messages=[
+            {"role": "system", "content": system_message},
+            *conversation_messages
+            ],
+            max_tokens=1024
+        )
+        
+        # Return the the response
+        return response.choices[0].message.content
+
     except Exception as e:
-        print(f"Error calling Bedrock: {e}")
+        print(f"Error calling LLM: {e}")
         return None
 
 def call_tool(tool_name, tool_input):
@@ -102,15 +109,15 @@ def update_memory(conversation_history, user_input, response):
     updated_history = conversation_history.copy()
     updated_history.append({
         "role": "user",
-        "content": [{"text": user_input}]
+        "content": user_input
     })
     updated_history.append({
         "role": "assistant",
-        "content": [{"text": response}]
+        "content": response
     })
     return updated_history
 
-def query_claude(user_input, conversation_history=[]):
+def query_client(user_input, conversation_history=[]):
     # System message for tool selection and general conversation
     system_message = (
         "You're a helpful personal assistant. Based on the user's message, "
@@ -170,6 +177,6 @@ while True:
     if user_input.lower() == "quit":
         print("Agent: Goodbye!")
         break
-    response, conversation_history = query_claude(user_input, conversation_history)
+    response, conversation_history = query_client(user_input, conversation_history)
     print("Agent:", response)
 
